@@ -25,6 +25,12 @@ cdef inline void copy_stack(StackRecord* a, StackRecord* b) nogil:
     a.impurity = b.impurity
     a.n_constant_features = b.n_constant_features
 
+    # Mike code
+    a.weighted_n = b.weighted_n
+    a.sum_node = b.sum_node
+    a.sq_sum_node = b.sq_sum_node
+
+
 
 cdef class Stack:
     """A LIFO data structure.
@@ -55,9 +61,14 @@ cdef class Stack:
     cdef bint is_empty(self) nogil:
         return self.top <= 0
 
+    # cdef int push(self, SIZE_t start, SIZE_t end, SIZE_t depth, SIZE_t parent,
+    #               bint is_left, double impurity,
+    #               SIZE_t n_constant_features) nogil:
     cdef int push(self, SIZE_t start, SIZE_t end, SIZE_t depth, SIZE_t parent,
-                  bint is_left, double impurity,
+                  bint is_left, double impurity, double weighted_n,
+                  double sum_node, double sq_sum_node,
                   SIZE_t n_constant_features) nogil:
+
         """Push a new element onto the stack.
 
         Returns 0 if successful; -1 on out of memory error.
@@ -75,6 +86,18 @@ cdef class Stack:
                 return -1
             self.stack_ = stack
 
+        # with gil:
+        #      print 'Inside stack push (input vars before assignment)'
+        #      print 'start', start
+        #      print 'end', end
+        #      print 'depth', depth
+        #      print 'parent', parent
+        #      print 'is_left', is_left
+        #      print 'impurity', impurity
+        #      print 'weighted_n', weighted_n
+        #      print 'sum_node', sum_node
+        #      print 'sq_sum_node', sq_sum_node
+
         stack = self.stack_
         stack[top].start = start
         stack[top].end = end
@@ -82,7 +105,26 @@ cdef class Stack:
         stack[top].parent = parent
         stack[top].is_left = is_left
         stack[top].impurity = impurity
+
+        # Mike code
+        stack[top].weighted_n = weighted_n
+        stack[top].sum_node = sum_node
+        stack[top].sq_sum_node = sq_sum_node
+
         stack[top].n_constant_features = n_constant_features
+
+        # with gil:
+        #      print 'Inside stack push (stack vars)'
+        #      print 'start', stack.start
+        #      print 'end', stack.end
+        #      print 'depth', stack.depth
+        #      print 'parent', stack.parent
+        #      print 'is_left', stack.is_left
+        #      print 'impurity', stack.impurity
+        #      print 'weighted_n', stack.weighted_n
+        #      print 'sum_node', stack.sum_node
+        #      print 'sq_sum_node', stack.sq_sum_node
+
 
         # Increment stack pointer
         self.top = top + 1

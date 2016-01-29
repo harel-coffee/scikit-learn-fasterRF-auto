@@ -45,7 +45,7 @@ DTYPE = _tree.DTYPE
 DOUBLE = _tree.DOUBLE
 
 CRITERIA_CLF = {"gini": _tree.Gini, "entropy": _tree.Entropy}
-CRITERIA_REG = {"mse": _tree.MSE, "friedman_mse": _tree.FriedmanMSE}
+CRITERIA_REG = {"mse": _tree.MSE, "friedman_mse": _tree.FriedmanMSE, "mse_mike": _tree.MSE_MIKE, "mse_mike_friedman": _tree.MSE_MIKE_FRIEDMAN, "mse_mike_absdiff": _tree.MSE_MIKE_ABSDIFF}
 SPLITTERS = {"best": _tree.BestSplitter,
              "presort-best": _tree.PresortBestSplitter,
              "random": _tree.RandomSplitter}
@@ -166,6 +166,12 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator,
 
         self.n_classes_ = np.array(self.n_classes_, dtype=np.intp)
 
+        # Mike code, multiply y by the weights
+        memoized_weights = True
+        if memoized_weights and sample_weight is not None:
+#            print 'Injecting weights into y', sample_weight.shape, y.shape
+            y = np.reshape(np.array(sample_weight), (y.shape[0], 1)) * y
+
         if getattr(y, "dtype", None) != DOUBLE or not y.flags.contiguous:
             y = np.ascontiguousarray(y, dtype=DOUBLE)
 
@@ -244,11 +250,18 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator,
                 criterion = CRITERIA_REG[self.criterion](self.n_outputs_)
 
         splitter = self.splitter
-        if not isinstance(self.splitter, Splitter):
+        if not isinstance(self.splitter, Splitter):            
+            # splitter = SPLITTERS[self.splitter](criterion,
+            #                                     self.max_features_,
+            #                                     self.min_samples_leaf,
+            #                                     random_state)
+            
+            # Mike code
             splitter = SPLITTERS[self.splitter](criterion,
                                                 self.max_features_,
                                                 self.min_samples_leaf,
-                                                random_state)
+                                                random_state,
+                                                self.n_outputs_)
 
         self.tree_ = Tree(self.n_features_, self.n_classes_, self.n_outputs_)
 
@@ -261,12 +274,41 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator,
                                            self.min_samples_leaf, max_depth,
                                            max_leaf_nodes)
 
-        builder.build(self.tree_, X, y, sample_weight)
+#        builder.build(self.tree_, X, y, sample_weight)
+
+        # Mike code
+        from time import time
+        square_time = time()
+        y_sq = y * y
+        if memoized_weights and sample_weight is not None:
+#            print 'Injecting weights into y_sq'
+            y_sq = np.reshape(np.array(sample_weight), (y_sq.shape[0], 1)) * y_sq
+            # print y_sq.shape
+        # print 'y shape', y.shape
+        # print 'y_sq shape', y_sq.shape
+        # print 'y dtype', y.dtype
+        # print 'y_sq dtype', y_sq.dtype
+        # print 'y contiguous', y.flags.contiguous
+        # print 'y_sq contiguous', y_sq.flags.contiguous
+        y_sq = np.atleast_1d(y_sq)
+        if y_sq.ndim == 1:
+            # reshape is necessary to preserve the data contiguity against vs
+            # [:, np.newaxis] that does not.
+            print 'Reshaping y_sq'
+            y_sq = np.reshape(y_sq, (-1, 1))
+        if getattr(y_sq, "dtype", None) != DOUBLE or not y_sq.flags.contiguous:
+            y_sq = np.ascontiguousarray(y_sq, dtype=DOUBLE)
+
+        print 'Inside BaseDecisionTree'
+        print 'Sample weight', sample_weight[:20]
+        builder.build(self.tree_, X, y, y_sq, sample_weight)
+        #print 'Done builder.build'
 
         if self.n_outputs_ == 1:
             self.n_classes_ = self.n_classes_[0]
             self.classes_ = self.classes_[0]
 
+        #print 'Returning from fit'
         return self
 
     def predict(self, X):

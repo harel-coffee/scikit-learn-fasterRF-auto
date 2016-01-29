@@ -17,6 +17,16 @@ ctypedef np.npy_intp SIZE_t              # Type for indices and counters
 # =============================================================================
 
 # A record on the stack for depth-first tree growing
+# cdef struct StackRecord:
+#     SIZE_t start
+#     SIZE_t end
+#     SIZE_t depth
+#     SIZE_t parent
+#     bint is_left
+#     double impurity
+#     SIZE_t n_constant_features
+
+# Mike code
 cdef struct StackRecord:
     SIZE_t start
     SIZE_t end
@@ -24,6 +34,9 @@ cdef struct StackRecord:
     SIZE_t parent
     bint is_left
     double impurity
+    double weighted_n
+    double sum_node,
+    double sq_sum_node,
     SIZE_t n_constant_features
 
 cdef class Stack:
@@ -32,9 +45,16 @@ cdef class Stack:
     cdef StackRecord* stack_
 
     cdef bint is_empty(self) nogil
+    # cdef int push(self, SIZE_t start, SIZE_t end, SIZE_t depth, SIZE_t parent,
+    #               bint is_left, double impurity,
+    #               SIZE_t n_constant_features) nogil
+
+    # Mike code
     cdef int push(self, SIZE_t start, SIZE_t end, SIZE_t depth, SIZE_t parent,
-                  bint is_left, double impurity,
+                  bint is_left, double impurity, double weighted_n,
+                  double sum_node, double sq_sum_node,
                   SIZE_t n_constant_features) nogil
+
     cdef int pop(self, StackRecord* res) nogil
 
 

@@ -11,12 +11,38 @@
 import numpy as np
 cimport numpy as np
 
-ctypedef np.npy_float32 DTYPE_t          # Type of X
+#ctypedef np.npy_float32 DTYPE_t          # Type of X
+# Mike code
+ctypedef np.npy_int8 DTYPE_t          # Type of X
 ctypedef np.npy_float64 DOUBLE_t         # Type of y, sample_weight
+# Mike code
+#ctypedef np.npy_float32 DOUBLE_t         # Type of y, sample_weight
 ctypedef np.npy_intp SIZE_t              # Type for indices and counters
 ctypedef np.npy_int32 INT32_t            # Signed 32 bit integer
 ctypedef np.npy_uint32 UINT32_t          # Unsigned 32 bit integer
 
+# Mike code: to replace the use of double
+#ctypedef np.npy_float32 DOUBLE_f
+ctypedef double DOUBLE_f
+
+
+
+# Mike code
+cdef extern from "time.h": 
+
+    # # Declare only what is used from `tm` structure. 
+    # struct tm: 
+    #     int tm_mday # Day of the month: 1-31 
+    #     int tm_mon # Months *since* january: 0-11 
+    #     int tm_year # Years since 1900 
+ 
+    ctypedef long time_t 
+#    tm* localtime(time_t *timer) 
+    time_t time(time_t *tloc)  nogil
+
+
+# Mike notes:
+# functions whose nogil were removed: update_mse_mike, sort, node_split, and a call on line 2878 to node_split sets a 'with gil'
 
 # =============================================================================
 # Criterion
@@ -29,6 +55,10 @@ cdef class Criterion:
 
     # Internal structures
     cdef DOUBLE_t* y                     # Values of y
+
+    # Mike code
+    cdef DOUBLE_t* y_sq                     # Values of y_sq
+
     cdef SIZE_t y_stride                 # Stride in y (since n_outputs >= 1)
     cdef DOUBLE_t* sample_weight         # Sample weights
 
@@ -39,25 +69,60 @@ cdef class Criterion:
 
     cdef SIZE_t n_outputs                # Number of outputs
     cdef SIZE_t n_node_samples           # Number of samples in the node (end-start)
-    cdef double weighted_n_samples       # Weighted number of samples (in total)
-    cdef double weighted_n_node_samples  # Weighted number of samples in the node
-    cdef double weighted_n_left          # Weighted number of samples in the left node
-    cdef double weighted_n_right         # Weighted number of samples in the right node
+    cdef DOUBLE_f weighted_n_samples       # Weighted number of samples (in total)
+    cdef DOUBLE_f weighted_n_node_samples  # Weighted number of samples in the node
+    cdef DOUBLE_f weighted_n_left          # Weighted number of samples in the left node
+    cdef DOUBLE_f weighted_n_right         # Weighted number of samples in the right node
 
+    # Mike code
+    cdef DOUBLE_f* y_node
+    cdef DOUBLE_f* y_sq_node
+    cdef DOUBLE_f* sample_weight_node
+    cdef SIZE_t* samples_fx
+
+    
     # The criterion object is maintained such that left and right collected
     # statistics correspond to samples[start:pos] and samples[pos:end].
 
     # Methods
+    # cdef void init(self, DOUBLE_t* y, SIZE_t y_stride, DOUBLE_t* sample_weight,
+    #                DOUBLE_f weighted_n_samples, SIZE_t* samples, SIZE_t start,
+    #                SIZE_t end) nogil
+
+    # Mike code
     cdef void init(self, DOUBLE_t* y, SIZE_t y_stride, DOUBLE_t* sample_weight,
-                   double weighted_n_samples, SIZE_t* samples, SIZE_t start,
-                   SIZE_t end) nogil
+                   DOUBLE_f weighted_n_samples, SIZE_t* samples, SIZE_t start,
+                   SIZE_t end, DOUBLE_t* y_sq) nogil
+
+    # Mike code
+    cdef void init_mse_mike(self, DOUBLE_t* y, SIZE_t y_stride, DOUBLE_t* sample_weight,
+                   DOUBLE_f weighted_n_samples, SIZE_t* samples, SIZE_t start,
+                   SIZE_t end, 
+                   DOUBLE_f weighted_n_node_samples,
+                   DOUBLE_f* sum_total,
+                   DOUBLE_f* sq_sum_total,
+                   DOUBLE_t* y_sq) nogil
+
     cdef void reset(self) nogil
     cdef void update(self, SIZE_t new_pos) nogil
-    cdef double node_impurity(self) nogil
-    cdef void children_impurity(self, double* impurity_left,
-                                double* impurity_right) nogil
-    cdef void node_value(self, double* dest) nogil
-    cdef double impurity_improvement(self, double impurity) nogil
+
+    # Mike code
+    cdef void update_mse_mike(self, SIZE_t new_pos, int identity_weight) nogil
+
+    cdef DOUBLE_f node_impurity(self) nogil
+    cdef void children_impurity(self, DOUBLE_f* impurity_left,
+                                DOUBLE_f* impurity_right) nogil
+
+    # MSE_MIKE, I apparently access fields of fields or that would require the Python gil
+    cdef void children_sums(self, DOUBLE_f* weighted_n_left,
+                                  DOUBLE_f* weighted_n_right,
+                                  DOUBLE_f* sum_left,
+                                  DOUBLE_f* sum_right,
+                                  DOUBLE_f* sq_sum_left,
+                                  DOUBLE_f* sq_sum_right) nogil
+
+    cdef void node_value(self, DOUBLE_f* dest) nogil
+    cdef DOUBLE_f impurity_improvement(self, DOUBLE_f impurity) nogil
 
 
 # =============================================================================
@@ -80,7 +145,7 @@ cdef class Splitter:
 
     cdef SIZE_t* samples                 # Sample indices in X, y
     cdef SIZE_t n_samples                # X.shape[0]
-    cdef double weighted_n_samples       # Weighted number of samples
+    cdef DOUBLE_f weighted_n_samples       # Weighted number of samples
     cdef SIZE_t* features                # Feature indices in X
     cdef SIZE_t* constant_features       # Constant features indices
     cdef SIZE_t n_features               # X.shape[1]
@@ -92,8 +157,24 @@ cdef class Splitter:
     cdef SIZE_t X_sample_stride
     cdef SIZE_t X_fx_stride
     cdef DOUBLE_t* y
+
+    # Mike code
+    cdef DOUBLE_t* y_sq
     cdef SIZE_t y_stride
     cdef DOUBLE_t* sample_weight
+
+    # Mike code
+    cdef int identity_weight
+
+    # Mike code
+    cdef time_t copy_time
+    cdef time_t count_sort_time
+    cdef time_t search_time
+    cdef time_t sort_time
+    cdef time_t update_time
+
+    # Mike code
+    cdef SIZE_t n_outputs                # Number of outputs
 
     # The samples vector `samples` is maintained by the Splitter object such
     # that the samples contained in a node are contiguous. With this setting,
@@ -112,24 +193,50 @@ cdef class Splitter:
     # This allows optimization with depth-based tree building.
 
     # Methods
-    cdef void init(self, np.ndarray X, np.ndarray y, DOUBLE_t* sample_weight)
+    # cdef void init(self, np.ndarray X, np.ndarray y, DOUBLE_t* sample_weight)
+
+    # Mike code
+    cdef void init(self, np.ndarray X, np.ndarray y, np.ndarray y_sq, DOUBLE_t* sample_weight)
 
     cdef void node_reset(self, SIZE_t start, SIZE_t end,
-                         double* weighted_n_node_samples) nogil
+                         DOUBLE_f* weighted_n_node_samples) nogil
 
+    # Mike code, a special node reset that memoizes computation of sums.
+    cdef void node_reset_mse_mike(self, SIZE_t start, SIZE_t end,
+                         DOUBLE_f* weighted_n_node_samples,
+                         DOUBLE_f* sum_total,
+                         DOUBLE_f* sq_sum_total) nogil
+
+    # cdef void node_split(self,
+    #                      DOUBLE_f impurity,   # Impurity of the node
+    #                      SIZE_t* pos,       # Set to >= end if the node is a leaf
+    #                      SIZE_t* feature,
+    #                      DOUBLE_f* threshold,
+    #                      DOUBLE_f* impurity_left,
+    #                      DOUBLE_f* impurity_right,
+    #                      DOUBLE_f* impurity_improvement,
+    #                      SIZE_t* n_constant_features) nogil
+
+    # Mike code
     cdef void node_split(self,
-                         double impurity,   # Impurity of the node
+                         DOUBLE_f impurity,   # Impurity of the node
                          SIZE_t* pos,       # Set to >= end if the node is a leaf
                          SIZE_t* feature,
-                         double* threshold,
-                         double* impurity_left,
-                         double* impurity_right,
-                         double* impurity_improvement,
+                         DOUBLE_f* threshold,
+                         DOUBLE_f* impurity_left,
+                         DOUBLE_f* impurity_right,
+                         DOUBLE_f* weighted_n_left,
+                         DOUBLE_f* weighted_n_right,
+                         DOUBLE_f* sum_left,
+                         DOUBLE_f* sum_right,
+                         DOUBLE_f* sq_sum_left,
+                         DOUBLE_f* sq_sum_right,
+                         DOUBLE_f* impurity_improvement,
                          SIZE_t* n_constant_features) nogil
 
-    cdef void node_value(self, double* dest) nogil
+    cdef void node_value(self, DOUBLE_f* dest) nogil
 
-    cdef double node_impurity(self) nogil
+    cdef DOUBLE_f node_impurity(self) nogil
 
 
 # =============================================================================
@@ -164,14 +271,14 @@ cdef class Tree:
     cdef public SIZE_t node_count        # Counter for node IDs
     cdef public SIZE_t capacity          # Capacity of tree, in terms of nodes
     cdef Node* nodes                     # Array of nodes
-    cdef double* value                   # (capacity, n_outputs, max_n_classes) array of values
+    cdef DOUBLE_f* value                   # (capacity, n_outputs, max_n_classes) array of values
     cdef SIZE_t value_stride             # = n_outputs * max_n_classes
 
     # Methods
     cdef SIZE_t _add_node(self, SIZE_t parent, bint is_left, bint is_leaf,
-                          SIZE_t feature, double threshold, double impurity,
+                          SIZE_t feature, DOUBLE_f threshold, DOUBLE_f impurity,
                           SIZE_t n_node_samples,
-                          double weighted_n_samples) nogil
+                          DOUBLE_f weighted_n_samples) nogil
     cdef void _resize(self, SIZE_t capacity)
     cdef int _resize_c(self, SIZE_t capacity=*) nogil
 
@@ -180,7 +287,8 @@ cdef class Tree:
 
     cpdef np.ndarray predict(self, np.ndarray[DTYPE_t, ndim=2] X)
     cpdef np.ndarray apply(self, np.ndarray[DTYPE_t, ndim=2] X)
-    cpdef compute_feature_importances(self, normalize=*)
+#    cpdef compute_feature_importances(self, normalize=*)
+    cpdef compute_feature_importances(self, normalize=*, weighted=*)
 
 
 # =============================================================================
@@ -201,5 +309,8 @@ cdef class TreeBuilder:
     cdef SIZE_t min_samples_leaf    # Minimum number of samples in a leaf
     cdef SIZE_t max_depth           # Maximal tree depth
 
-    cpdef build(self, Tree tree, np.ndarray X, np.ndarray y,
-                np.ndarray sample_weight=*)
+    # cpdef build(self, Tree tree, np.ndarray X, np.ndarray y,
+    #             np.ndarray sample_weight=*)
+
+    # Mike code
+    cpdef build(self, Tree tree, np.ndarray X, np.ndarray y, np.ndarray y_sq, np.ndarray sample_weight=*)
